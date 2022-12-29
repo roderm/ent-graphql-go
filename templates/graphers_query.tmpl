@@ -1,0 +1,127 @@
+{{/* Tell Intellij/GoLand to enable the autocompletion based on the *gen.Graph type. */}}
+{{/* gotype: entgo.io/ent/entc/gen.Graph */}}
+
+{{ define "graphers_query" }}
+
+{{/* Add the base header for the generated file */}}
+{{ $pkg := base $.Config.Package }}
+{{ template "header" $ }}
+
+{{/* Loop over all nodes and add the Greet method */}}
+{{ range $n := $.Nodes }}
+
+{{- if eq $n.Name "Event" }}
+var {{ $n.Name | pascal }}Type *graphql.Interface = graphql.NewInterface(graphql.InterfaceConfig{
+{{- else }}
+var {{ $n.Name | pascal }}Type *graphql.Object = graphql.NewObject(graphql.ObjectConfig{
+{{- end }}
+	Name: "{{ $n.Name | pascal }}",
+	Fields: graphql.Fields{
+		"id": &graphql.Field{
+			Name: "id",
+			Type: graphql.NewNonNull(graphql.ID),
+		},
+		{{- range $f := $n.Fields }}
+		{{- if IsOutput $f}}
+		{{- if not $f.IsEdgeField }}
+		"{{ $f.Name | camel }}": &graphql.Field{
+			Name: "{{ $f.Name | camel }}",
+			Type: {{ GqlTypeString $f }},
+		},
+		{{- end }}
+		{{- end }}
+		{{- end }}
+	},
+})
+type {{ $n.Name | camel }}Definition struct{
+	DefinedFilterDefinitions []FilterDefinition
+	fields 	[]EntGographersType
+}
+
+var {{ $n.Name | pascal }}Definition = &{{ $n.Name | camel }}Definition{
+	DefinedFilterDefinitions: []FilterDefinition{},
+	fields: []EntGographersType{
+		{{ $n.Name }}ID,
+		{{- range $f := $n.Fields }}
+		{{- if IsOutput $f}}
+		{{- if not $f.IsEdgeField }}
+		{{ $n.Name}}_{{ $f.Name }},
+		{{- end }}
+		{{- end }}
+		{{- end }}
+	},
+}
+func (d *{{ $n.Name | camel }}Definition) Fields() []EntGographersType {
+	return d.fields
+}
+func (*{{ $n.Name | camel }}Definition) Name() string {
+	return "{{ $n.Name | camel }}"
+}
+
+func (d *{{ $n.Name | camel }}Definition) FilterDefinitions() []FilterDefinition {
+	return d.DefinedFilterDefinitions
+}
+func (*{{ $n.Name | camel }}Definition) GraphQLFields() graphql.Fields {
+	return graphql.Fields{
+		"id": &graphql.Field{
+			Name: "id",
+			Type: graphql.NewNonNull(graphql.ID),
+		},
+		{{- range $f := $n.Fields }}
+		{{- if IsOutput $f}}
+		{{- if not $f.IsEdgeField }}
+		"{{ $f.Name | camel }}": &graphql.Field{
+			Name: "{{ $f.Name | camel }}",
+			Type: {{ GqlTypeString $f }},
+		},
+		{{- end }}
+		{{- end }}
+		{{- end }}	
+		{{ if $n.Edges }}
+		{{- range $edge := $n.Edges }}
+		"{{ $edge.Name | camel }}": &graphql.Field{
+			Name: "{{ $edge.Name | camel }}",
+			{{- if $edge.Unique }}
+			Type: {{ $edge.Type.Name | pascal }}Type,
+			{{- else }}
+			Type: paging.NewConnection({{ $edge.Type.Name | pascal }}Type),
+			Args: graphql.FieldConfigArgument{
+				"filter": &graphql.ArgumentConfig{Type: NewWhereInput("{{ $edge.Type.Name | pascal }}WhereInput", {{ $edge.Type.Name | pascal }}Definition)},
+				"paging": &graphql.ArgumentConfig{Type: paging.Paging},	
+			},
+			{{- end }}
+		},
+		{{- end }}
+		{{- end }}
+	}
+}
+
+var Create{{ $n.Name }}Fields = graphql.InputObjectConfigFieldMap{
+	{{- range $f := $n.Fields }}
+	{{- if IsCreate $f}}
+	"{{ $f.Name | camel }}": &graphql.InputObjectFieldConfig{
+		Type: {{ GqlTypeString $f }},
+	},
+	{{- end }}
+	{{- end }}
+}
+
+var Update{{ $n.Name }}Fields = graphql.InputObjectConfigFieldMap{
+	{{- range $f := $n.Fields }}
+	{{- if IsUpdate $f}}
+	"{{ $f.Name | camel }}": &graphql.InputObjectFieldConfig{
+		Type: {{ GqlTypeString $f }},
+	},
+	{{- end }}
+	{{- end }}
+}
+{{ end }}
+
+func LoadTypes() {
+	{{- range $n := $.Nodes }}
+	for name, field := range {{ $n.Name | pascal }}Definition.GraphQLFields() {
+		{{ $n.Name | pascal }}Type.AddFieldConfig(name, field)
+	}
+	{{- end }}
+}
+{{ end }}

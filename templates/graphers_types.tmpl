@@ -1,0 +1,98 @@
+{{/* Tell Intellij/GoLand to enable the autocompletion based on the *gen.Graph type. */}}
+{{/* gotype: entgo.io/ent/entc/gen.Graph */}}
+
+{{ define "graphers_types" }}
+
+{{/* Add the base header for the generated file */}}
+{{ $pkg := base $.Config.Package }}
+{{ template "header" $ }}
+type EntGographersType interface {
+	Name() string
+	Fields() []EntGographersType
+	FilterDefinitions() []FilterDefinition
+}
+
+type noopEntGographersType struct {
+	name func() string
+	gqlType func() graphql.Type
+	fields []EntGographersType
+	DefinedFilterDefinitions []FilterDefinition
+}
+
+func (n *noopEntGographersType) Name() string {
+	return n.name()
+}
+func (n *noopEntGographersType) Type() graphql.Type {
+	return n.gqlType()
+}
+func (n *noopEntGographersType) Fields() []EntGographersType {
+	return n.fields
+}
+func (n *noopEntGographersType) FilterDefinitions() []FilterDefinition {
+	return n.DefinedFilterDefinitions
+}
+
+{{ range $n := $.Nodes }}
+
+var {{ $n.Name }}ID = &noopEntGographersType{
+	name: func() string {
+		return "{{ $n.Name | camel }}ID"
+	},
+	gqlType: func() graphql.Type {
+		return graphql.NewNonNull(graphql.ID)
+	},
+	fields: []EntGographersType{},
+	DefinedFilterDefinitions: []FilterDefinition{
+		EQFilter("id", "{{ $n.ID.StorageKey }}", {{ GqlTypeString $n.ID }}),
+		EQFilter("idEQ", "{{ $n.ID.StorageKey }}", {{ GqlTypeString $n.ID }}),
+		NEQFilter("idNEQ", "{{ $n.ID.StorageKey }}", {{ GqlTypeString $n.ID }}),
+		INFilter("idIn", "{{ $n.ID.StorageKey }}", {{ GqlTypeString $n.ID }}),
+		NotINFilter("idNotIn", "{{ $n.ID.StorageKey }}", {{ GqlTypeString $n.ID }}),
+	},
+}
+{{- range $f := $n.Fields }}
+{{- if IsOutput $f}}
+{{- if not $f.IsEdgeField }}
+var {{ $n.Name}}_{{ $f.Name }} = &noopEntGographersType{
+	name: func() string {
+		return "{{ $f.Name | camel }}"
+	},
+	gqlType: func() graphql.Type {
+		return {{ GqlTypeString $f }}
+	},
+	fields: []EntGographersType{},
+	DefinedFilterDefinitions: []FilterDefinition{
+		EQFilter("{{ $f.Name | camel }}", "{{ $f.StorageKey }}", {{ GqlTypeString $f }}),
+		EQFilter("{{ $f.Name | camel }}EQ", "{{ $f.StorageKey }}", {{ GqlTypeString $f }}),
+		NEQFilter("{{ $f.Name | camel }}NEQ", "{{ $f.StorageKey }}", {{ GqlTypeString $f }}),
+		INFilter("{{ $f.Name | camel }}In", "{{ $f.StorageKey }}", {{ GqlTypeString $f }}),
+		NotINFilter("{{ $f.Name | camel }}NotIn", "{{ $f.StorageKey }}", {{ GqlTypeString $f }}),
+	},
+}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- range $edge := $n.Edges }}
+var {{ $n.Name}}_{{ $edge.Name }} = &noopEntGographersType{
+	name: func() string {
+		return "{{ $edge.Name | camel }}"
+	},
+	gqlType: func() graphql.Type {
+		return {{ $edge.Type.Name }}Type
+	},
+}
+{{- end }}
+{{ end }}
+func init() {
+	{{- range $n := $.Nodes }}
+	{{ if $n.Edges }}
+	{{ $n.Name}}Definition.fields = append({{ $n.Name }}Definition.fields,
+		{{- range $edge := $n.Edges }}
+		{{ $n.Name}}_{{ $edge.Name }},
+		{{- end }}
+	)
+	{{- end }}
+	{{- end }}
+}
+
+{{ end }}

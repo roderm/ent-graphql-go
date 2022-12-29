@@ -1,0 +1,199 @@
+{{/* Tell Intellij/GoLand to enable the autocompletion based on the *gen.Graph type. */}}
+{{/* gotype: entgo.io/ent/entc/gen.Graph */}}
+
+{{ define "graphers_filter" }}
+
+{{/* Add the base header for the generated file */}}
+{{ $pkg := base $.Config.Package }}
+{{ template "header" $ }}
+
+var filterTypes = make(map[string]*graphql.InputObject)
+func NewWhereInput(name string, target EntGographersType) *graphql.InputObject {
+	if _, ok := filterTypes[name]; !ok {
+		filterTypes[name] = graphql.NewInputObject(graphql.InputObjectConfig{
+			Name:   name,
+			Fields: graphql.InputObjectConfigFieldMap{},
+			Extend: false,	
+		})
+		filterTypes[name].AddFieldConfig("not", &graphql.InputObjectFieldConfig{
+			Type: filterTypes[name],
+		})
+		filterTypes[name].AddFieldConfig("and", &graphql.InputObjectFieldConfig{
+			Type: graphql.NewList(graphql.NewNonNull(filterTypes[name])),
+		})
+		filterTypes[name].AddFieldConfig("or", &graphql.InputObjectFieldConfig{
+			Type: graphql.NewList(graphql.NewNonNull(filterTypes[name])),
+		})
+	}
+	for _, field := range target.Fields() {
+		for _, d := range field.FilterDefinitions() {
+			filterTypes[name].AddFieldConfig(d.Name(), &graphql.InputObjectFieldConfig{
+				Type: d.GqlType(),
+			})
+		}
+	}
+	return filterTypes[name]
+}
+type FilterDefinition interface {
+	Name() string
+	Predicate(*sql.Selector, ...interface{}) error
+	GqlType() graphql.Type
+}
+
+type NoopFilterDefinition struct {
+	name func() string
+	predicate func(*sql.Selector, ...interface{}) error
+	gqlType func() graphql.Type
+}
+
+func(n *NoopFilterDefinition) Name() string {
+	return n.name()
+}
+func(n *NoopFilterDefinition) Predicate(s *sql.Selector, in ...interface{}) error {
+	return n.predicate(s, in...)
+}
+func(n *NoopFilterDefinition) GqlType() graphql.Type {
+	return n.gqlType()
+}
+
+func EQFilter(name, dbkey string, gqlType graphql.Type) FilterDefinition {
+	return &NoopFilterDefinition{
+		name: func() string {
+			return name
+		},
+		gqlType: func() graphql.Type {
+			if t, ok := gqlType.(*graphql.NonNull); ok {
+				return t.OfType
+			}
+			return gqlType
+		},
+		predicate: func(s *sql.Selector, in ...interface{}) error {
+			for _, v := range in {
+				s.Where(sql.P().EQ(dbkey, v))
+			}
+			return nil
+		},
+	}
+}
+
+func NEQFilter(name, dbkey string, gqlType graphql.Type) FilterDefinition {
+	return &NoopFilterDefinition{
+		name: func() string {
+			return name
+		},
+		gqlType: func() graphql.Type {
+			if t, ok := gqlType.(*graphql.NonNull); ok {
+				return t.OfType
+			}
+			return gqlType
+		},
+		predicate: func(s *sql.Selector, in ...interface{}) error {
+			for _, v := range in {
+				s.Where(sql.P().NEQ(dbkey, v))
+			}
+			return nil
+		},
+	}
+}
+
+func INFilter(name, dbkey string, gqlType graphql.Type) FilterDefinition {
+	return &NoopFilterDefinition{
+		name: func() string {
+			return name
+		},
+		gqlType: func() graphql.Type {
+			return graphql.NewList(gqlType)
+		},
+		predicate: func(s *sql.Selector, in ...interface{}) error {
+			s.Where(sql.P().In(dbkey, in...))
+			return nil
+		},
+	}
+}
+func NotINFilter(name, dbkey string, gqlType graphql.Type) FilterDefinition {
+	return &NoopFilterDefinition{
+		name: func() string {
+			return name
+		},
+		gqlType: func() graphql.Type {
+			return graphql.NewList(gqlType)
+		},
+		predicate: func(s *sql.Selector, in ...interface{}) error {
+			s.Where(sql.P().Not().In(dbkey, in...))
+			return nil
+		},
+	}
+}
+
+func HasFilter(name, dbkey string, t EntGographersType) FilterDefinition {
+	return &NoopFilterDefinition{
+		name: func() string {
+			return name
+		},
+		gqlType: func() graphql.Type {
+			return graphql.Boolean
+		},
+		predicate: func(s *sql.Selector, in ...interface{}) error {
+			if set, ok := in[0].(bool); ok {
+				if set {
+					s.Where(sql.P().Not().IsNull(dbkey))
+				}else{
+					s.Where(sql.P().IsNull(dbkey))
+				}
+			}
+			return nil
+		},
+	}
+}
+
+func HasFilterWith(name string, t EntGographersType, pred func(in ...func(*sql.Selector)) func(*sql.Selector)) FilterDefinition {
+	return &NoopFilterDefinition{
+		name: func() string {
+			return name
+		},
+		gqlType: func() graphql.Type {
+			return NewWhereInput(name, t)
+		},
+		predicate: func(s *sql.Selector, in ...interface{}) error {
+			pred(FilterToPredicate(t, in[0].(map[string]interface{})))(s)
+			return nil
+		},
+	}
+}
+
+func FilterToPredicate(target EntGographersType, filter map[string]interface{}) func(s *sql.Selector) {
+	return func(s *sql.Selector) {
+		if and, ok := filter["and"].([]interface{}); ok {
+				s1 := s.Clone().SetP(nil)
+				for _, p := range and {
+					FilterToPredicate(target, p.(map[string]interface{}))(s1)
+				}
+				s.Where(s1.P())
+		}
+		if or, ok := filter["or"].([]interface{}); ok {
+			s1 := s.Clone().SetP(nil)
+				for i, p := range or {
+					if i > 0 {
+						s1.Or()
+					}
+					FilterToPredicate(target, p.(map[string]interface{}))(s1)
+				}
+				s.Where(s1.P())
+		}
+		if not, ok := filter["not"].(map[string]interface{}); ok {
+			FilterToPredicate(target, not)(s.Not())
+		}
+		for _, field := range target.Fields() {
+			for _, filterDef := range field.FilterDefinitions() {
+				if filterPred, ok := filter[filterDef.Name()]; ok {
+					err := filterDef.Predicate(s, filterPred)
+					if err != nil {
+						continue
+					}
+				}
+			}
+		}
+	}
+}
+
+{{ end }}
